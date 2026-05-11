@@ -102,7 +102,7 @@ pipeline {
         stage('Smoke Test') {
             steps {
                 sh '''
-                    sleep 5
+                    sleep 15
                     curl -f http://localhost:5000/health || exit 1
                 '''
                 echo "✅ Smoke test geçti"
