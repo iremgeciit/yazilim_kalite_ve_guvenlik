@@ -2,15 +2,18 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE    = 'techstore-app'
-        DOCKER_HUB_USER = 'iremgeciit' 
+        DOCKER_IMAGE = 'techstore-app'
+        DOCKER_HUB_USER = 'iremgeciit'
+        SONAR_HOST = 'http://techstore-sonarqube:9000'
+        SONAR_TOKEN = credentials('sonar-token')
+        SLACK_CHANNEL = '#devops-techstore'
     }
 
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
-                echo "✅ Kod GitHub'dan alındı"
+                echo "✅ Kod GitHub'dan alındı: ${env.GIT_COMMIT}"
             }
         }
 
@@ -30,7 +33,7 @@ pipeline {
             steps {
                 sh '''
                     . venv/bin/activate
-                    PYTHONPATH=. pytest tests/test_app.py -v --tb=short --junitxml=test-results/unit-tests.xml --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing
+                    PYTHONPATH=. pytest tests/test_app.py -v --tb=short --junit-xml=test-results/unit-tests.xml --cov=app --cov-report=xml:coverage.xml --cov-report=term-missing
                 '''
             }
             post {
@@ -43,18 +46,16 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-                    // Jenkins Tools'ta tanımladığın 'SonarScanner' ismini buraya bağladık
-                    def scannerHome = tool 'SonarScanner'
                     withSonarQubeEnv('SonarQube') {
-                        sh """
+                        sh '''
                             . venv/bin/activate
-                            ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.projectKey=techstore \
-                                -Dsonar.projectName="TechStore E-Commerce" \
-                                -Dsonar.sources=. \
-                                -Dsonar.exclusions=venv/**,tests/**,**/__pycache__/** \
-                                -Dsonar.python.coverage.reportPaths=coverage.xml
-                        """
+                            /var/jenkins_home/tools/hudson.plugins.sonar.SonarRunnerInstallation/SonarScanner/bin/sonar-scanner \
+                            -Dsonar.projectKey=techstore \
+                            -Dsonar.projectName='TechStore E-Commerce' \
+                            -Dsonar.sources=. \
+                            -Dsonar.exclusions=venv/**,tests/**,**/__pycache__/** \
+                            -Dsonar.python.coverage.reportPaths=coverage.xml
+                        '''
                     }
                 }
             }
@@ -62,26 +63,82 @@ pipeline {
 
         stage('Quality Gate') {
             steps {
-                timeout(time: 5, unit: 'MINUTES') {
+                timeout(time: 1, unit: 'HOURS') {
                     waitForQualityGate abortPipeline: true
                 }
-                echo "✅ SonarQube kalite kapısı geçildi"
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh "docker build -t ${DOCKER_IMAGE}:latest ."
+                sh "docker build -t ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest ."
                 echo "✅ Docker imajı oluşturuldu"
+            }
+        }
+
+        stage('Push to Docker Hub') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'docker-hub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+                    sh '''
+                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                        docker push ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest
+                    '''
+                }
+                echo "✅ Docker Hub'a gönderildi"
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                    docker stop techstore-app || true
+                    docker rm techstore-app || true
+                    docker run -d --name techstore-app -p 5000:5000 ${DOCKER_HUB_USER}/${DOCKER_IMAGE}:latest
+                '''
+                echo "✅ Uygulama dağıtıldı"
+            }
+        }
+
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    sleep 5
+                    curl -f http://localhost:5000/health || exit 1
+                '''
+                echo "✅ Smoke test geçti"
+            }
+        }
+
+        stage('UI Tests') {
+            steps {
+                sh '''
+                    . venv/bin/activate
+                    PYTHONPATH=. pytest tests/test_ui.py -v --tb=short
+                '''
+                echo "✅ UI testleri geçti"
             }
         }
     }
 
     post {
-        success { echo "🎉 Pipeline başarıyla tamamlandı!" }
-        failure { echo "❌ Pipeline başarısız!" }
-        always { cleanWs() }
+        always {
+            cleanWs()
+        }
+        success {
+            echo "✅ Pipeline başarılı! TechStore çalışıyor: http://localhost:5000"
+            slackSend(
+                channel: SLACK_CHANNEL,
+                color: 'good',
+                message: "✅ Pipeline başarılı! Uygulama dağıtıldı."
+            )
+        }
+        failure {
+            echo "❌ Pipeline başarısız!"
+            slackSend(
+                channel: SLACK_CHANNEL,
+                color: 'danger',
+                message: "❌ Pipeline başarısız! Lütfen logları kontrol edin."
+            )
+        }
     }
 }
-         
-          
