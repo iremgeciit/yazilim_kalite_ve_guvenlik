@@ -95,15 +95,15 @@ stages {
         }
     }
 
-    stage('Smoke Test') {
-        steps {
-            sh '''
-                sleep 30
-                curl -v http://techstore-app:5000/health || curl -v [http://172.17.0.1:5000/health](http://172.17.0.1:5000/health)
-            '''
-            echo "✅ Smoke Test Başarılı!"
+        stage('Smoke Test') {
+            steps {
+                sh '''
+                    sleep 5
+                    curl -f http://localhost:5000/health
+                '''
+                echo "✅ Smoke test geçti"
+            }
         }
-    }
 }
 
 post {
