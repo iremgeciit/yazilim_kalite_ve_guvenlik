@@ -98,8 +98,8 @@ stages {
         stage('Smoke Test') {
             steps {
                 sh '''
-                    sleep 5
-                    curl -f http://localhost:5000/health
+                   sleep 10
+            docker run --rm --network container:techstore-app curlimages/curl:latest curl -f http://localhost:5000/health
                 '''
                 echo "✅ Smoke test geçti"
             }
