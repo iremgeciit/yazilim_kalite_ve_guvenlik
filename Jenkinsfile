@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = 'techstore-app'
-        DOCKER_HUB_USER = 'iremgeciit'
+        DOCKER_HUB_USER = 'iremgecit'
         SONAR_HOST = 'http://techstore-sonarqube:9000'
         SONAR_TOKEN = credentials('sonar-token')
         SLACK_CHANNEL = '#devops-techstore'
